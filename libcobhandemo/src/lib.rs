@@ -4,6 +4,24 @@ use serde_json::{Value};
 use std::collections::HashMap;
 use rand::Rng;
 use rand::RngCore;
+use std::sync::atomic::{AtomicI32, Ordering};
+
+static COUNTER: AtomicI32 = AtomicI32::new(0);
+
+#[no_mangle]
+pub unsafe extern "C" fn spawnThread() {
+    std::thread::spawn(move || {
+        loop {
+            COUNTER.fetch_add(1, Ordering::Relaxed);
+            thread::sleep(time::Duration::from_secs(1))
+        }
+    });
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn readCounter() -> i32 {
+    COUNTER.load(Ordering::Relaxed)
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn sleepTest(seconds: i32) {
