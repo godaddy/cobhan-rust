@@ -16,7 +16,7 @@ class CobhanDemoLib(Cobhan):
     @classmethod
     def from_library_path(cls, library_root_path):
         instance = cls()
-        instance._load_library(library_root_path, 'cobhan-demo-lib', CobhanDemoLib.CDEFINES)
+        instance._load_library(library_root_path, 'libcobhandemo', CobhanDemoLib.CDEFINES)
         return instance
 
     @classmethod

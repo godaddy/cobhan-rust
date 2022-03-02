@@ -40,8 +40,8 @@ if result4["test2"] != "kittens":
     print("filterJson test failed")
     sys.exit(255)
 
-print("Testing sleep_test(10)")
-lib.sleep_test(10)
+print("Testing sleep_test(3)")
+lib.sleep_test(2)
 
 counter = lib.read_counter()
 print(f"Counter: {counter}")

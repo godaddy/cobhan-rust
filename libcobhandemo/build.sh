@@ -86,7 +86,7 @@ pip install cobhan
 count=0
 while [ $count -lt 20 ]; do
     echo "Test iteration ${count}"
-    python3 test/consumer_console_app.py "target/${BUILD_DIR}/libcobhandemo${DYN_EXT}"
+    python3 python-test/consumer_console_app.py "target/${BUILD_DIR}/libcobhandemo${DYN_EXT}"
     if [ "$?" -eq "0" ]; then
         echo "Passed"
     else
@@ -95,6 +95,28 @@ while [ $count -lt 20 ]; do
     fi
     count=$(expr ${count} + 1)
 done
+
+##########
+# Test Rust dynamic library file using node
+
+cp "target/${BUILD_DIR}/libcobhandemo${DYN_EXT}" "node-test/libcobhandemo/binaries/libcobhandemo-${DYN_SUFFIX}"
+npm -C node-test/libcobhandemo install
+pushd node-test/consumer-console-app
+npm install
+count=0
+while [ $count -lt 20 ]; do
+    echo "Test iteration ${count}"
+    node .
+    if [ "$?" -eq "0" ]; then
+        echo "Passed"
+    else
+        echo "Tests failed (Rust): libcobhandemo-${DYN_SUFFIX} Result: $?"
+        exit 255
+    fi
+    count=$(expr ${count} + 1)
+done
+popd
+##########
 
 echo "Tests passed (Rust): libcobhandemo-${DYN_SUFFIX}"
 
