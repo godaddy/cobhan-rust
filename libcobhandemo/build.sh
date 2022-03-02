@@ -79,7 +79,10 @@ fi
 echo "Compiling (Rust) ${BUILD_DIR}/libcobhandemo${DYN_EXT}"
 cargo build --verbose ${BUILD_FLAGS} --target-dir target/
 
-# Test Rust dynamic library file
+# Test Rust dynamic library file using python
+
+pip install cobhan
+
 count=0
 while [ $count -lt 20 ]; do
     echo "Test iteration ${count}"
