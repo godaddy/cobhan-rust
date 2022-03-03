@@ -6,7 +6,7 @@ authors = ["Jeremiah Gowdy <jeremiah@gowdy.me>"]
 description = "Cobhan FFI Rust Library"
 readme = "README.md"
 repository = "https://github.com/godaddy/cobhan-rust"
-license-file = "LICENSE"
+license = "MIT"
 homepage = "https://github.com/godaddy/cobhan-rust"
 
 [dependencies]
