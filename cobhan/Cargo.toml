@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2018"
 authors = ["Jeremiah Gowdy <jeremiah@gowdy.me>"]
 description = "Cobhan FFI Rust Library"
-readme = "README.md"
+readme = "../README.md"
 repository = "https://github.com/godaddy/cobhan-rust"
-license = "MIT"
+license-file = "../LICENSE"
 homepage = "https://github.com/godaddy/cobhan-rust"
 
 [dependencies]
