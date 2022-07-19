@@ -27,6 +27,6 @@
     "eslint-config-google": "^0.14.0"
   },
   "dependencies": {
-    "cobhan": "^1.0.15"
+    "cobhan": "^1.0.35"
   }
 }
