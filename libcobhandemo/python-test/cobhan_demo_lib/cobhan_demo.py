@@ -16,13 +16,13 @@ class CobhanDemoLib(Cobhan):
     @classmethod
     def from_library_path(cls, library_root_path):
         instance = cls()
-        instance._load_library(library_root_path, 'libcobhandemo', CobhanDemoLib.CDEFINES)
+        instance.load_library(library_root_path, 'libcobhandemo', CobhanDemoLib.CDEFINES)
         return instance
 
     @classmethod
     def from_library_file(cls, library_file_path):
         instance = cls()
-        instance._load_library_direct(library_file_path, CobhanDemoLib.CDEFINES)
+        instance.load_library_direct(library_file_path, CobhanDemoLib.CDEFINES)
         return instance
 
     def to_upper(self, input):

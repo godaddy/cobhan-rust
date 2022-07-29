@@ -99,6 +99,7 @@ done
 ##########
 # Test Rust dynamic library file using node
 
+mkdir -p node-test/libcobhandemo/binaries/
 cp "target/${BUILD_DIR}/libcobhandemo${DYN_EXT}" "node-test/libcobhandemo/binaries/libcobhandemo-${DYN_SUFFIX}"
 npm -C node-test/libcobhandemo install
 pushd node-test/consumer-console-app

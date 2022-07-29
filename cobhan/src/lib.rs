@@ -1,12 +1,14 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
 use std::os::raw::c_char;
 use std::ptr::copy_nonoverlapping;
 use std::slice::from_raw_parts;
-use serde_json::{Value};
-use std::collections::HashMap;
-use tempfile::NamedTempFile;
-use std::io::{Write};
-use std::fs;
 use std::str;
+
+use serde_json::Value;
+use tempfile::NamedTempFile;
 
 const ERR_NONE: i32 = 0;
 
@@ -42,14 +44,16 @@ static MAXIMUM_BUFFER_SIZE: i32 = i32::MAX;
 
 #[cfg(feature = "cobhan_debug")]
 macro_rules! debug_print {
-    ($( $args:expr ),*) => { println!( $( $args ),* ); }
+    ($( $args:expr ),*) => { println!($($args ),*); };
 }
 
 #[cfg(not(feature = "cobhan_debug"))]
 macro_rules! debug_print {
-    ($( $args:expr ),*) => {}
+    ($( $args:expr ),*) => {};
 }
 
+/// ## Safety
+/// tbd
 pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     if buffer.is_null() {
         debug_print!("cbuffer_to_vector: buffer is NULL");
@@ -61,8 +65,12 @@ pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     debug_print!("cbuffer_to_vector: raw length field is {}", length);
 
     if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!("cbuffer_to_vector: length {} is larger than MAXIMUM_BUFFER_SIZE ({})", length, MAXIMUM_BUFFER_SIZE);
-        return Err(ERR_BUFFER_TOO_LARGE)
+        debug_print!(
+            "cbuffer_to_vector: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
+            length,
+            MAXIMUM_BUFFER_SIZE
+        );
+        return Err(ERR_BUFFER_TOO_LARGE);
     }
     if length < 0 {
         debug_print!("cbuffer_to_vector: calling temp_to_vector");
@@ -73,25 +81,8 @@ pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     Ok(from_raw_parts(payload, length as usize).to_vec())
 }
 
-unsafe fn temp_to_vector(payload: *const u8, length: i32)  -> Result<Vec<u8>, i32> {
-    let file_name;
-    match str::from_utf8(from_raw_parts(payload, (0 - length) as usize)) {
-        Ok(f) => file_name = f,
-        Err(..) => {
-            debug_print!("temp_to_vector: temp file name is invalid utf-8 string (length = {})", 0 - length);
-            return Err(ERR_INVALID_UTF8);
-        }
-    }
-
-    return match fs::read(file_name) {
-        Ok(s) => Ok(s),
-        Err(_e) => {
-            debug_print!("temp_to_vector: failed to read temporary file {}: {}", file_name, _e);
-            Err(ERR_READ_TEMP_FILE_FAILED)
-        }
-    }
-}
-
+/// ## Safety
+/// tbd
 pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
     if buffer.is_null() {
         debug_print!("cbuffer_to_string: buffer is NULL");
@@ -103,7 +94,11 @@ pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
     debug_print!("cbuffer_to_string: raw length field is {}", length);
 
     if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!("cbuffer_to_string: length {} is larger than MAXIMUM_BUFFER_SIZE ({})", length, MAXIMUM_BUFFER_SIZE);
+        debug_print!(
+            "cbuffer_to_string: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
+            length,
+            MAXIMUM_BUFFER_SIZE
+        );
         return Err(ERR_BUFFER_TOO_LARGE);
     }
 
@@ -111,41 +106,67 @@ pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
 
     if length < 0 {
         debug_print!("cbuffer_to_string: calling temp_to_string");
-        return temp_to_string(payload, length)
+        return temp_to_string(payload, length);
     }
 
-    //Allocation: to_vec() is a clone/copy
-    return match String::from_utf8(from_raw_parts(payload, length as usize).to_vec()) {
-        Ok(input_str) => Ok(input_str),
-        Err(..) => {
-            debug_print!("cbuffer_to_string: payload is invalid utf-8 string (length = {})", length);
-            Err(ERR_INVALID_UTF8)
-        }
-    }
+    str::from_utf8(from_raw_parts(payload, length as usize))
+        .map(|s| s.to_owned())
+        .map_err(|_| {
+            debug_print!(
+                "cbuffer_to_string: payload is invalid utf-8 string (length = {})",
+                length
+            );
+            ERR_INVALID_UTF8
+        })
 }
 
 unsafe fn temp_to_string(payload: *const u8, length: i32) -> Result<String, i32> {
-    let file_name;
-    match str::from_utf8(from_raw_parts(payload, (0 - length) as usize)) {
-        Ok(f) => file_name = f,
-        Err(..) => {
-            debug_print!("temp_to_string: temp file name is invalid utf-8 string (length = {})", 0 - length);
-            return Err(ERR_INVALID_UTF8);
-        }
-    }
+    let file_name =
+        str::from_utf8(from_raw_parts(payload, (0 - length) as usize)).map_err(|_| {
+            debug_print!(
+                "temp_to_string: temp file name is invalid utf-8 string (length = {})",
+                0 - length
+            );
+            ERR_INVALID_UTF8
+        })?;
 
     debug_print!("temp_to_string: reading temp file {}", file_name);
 
-    return match fs::read_to_string(file_name) {
-        Ok(s) => Ok(s),
-        Err(_e) => {
-            debug_print!("temp_to_string: Error reading temp file {}: {}", file_name, _e);
-            Err(ERR_READ_TEMP_FILE_FAILED)
-        }
-    }
+    fs::read_to_string(file_name).map_err(|_e| {
+        debug_print!(
+            "temp_to_string: Error reading temp file {}: {}",
+            file_name,
+            _e
+        );
+        ERR_READ_TEMP_FILE_FAILED
+    })
 }
 
-pub unsafe fn cbuffer_to_hashmap_json(buffer: *const c_char) -> Result<HashMap<String,Value>, i32> {
+unsafe fn temp_to_vector(payload: *const u8, length: i32) -> Result<Vec<u8>, i32> {
+    let file_name =
+        str::from_utf8(from_raw_parts(payload, (0 - length) as usize)).map_err(|_| {
+            debug_print!(
+                "temp_to_vector: temp file name is invalid utf-8 string (length = {})",
+                0 - length
+            );
+            ERR_INVALID_UTF8
+        })?;
+
+    fs::read(file_name).map_err(|_e| {
+        debug_print!(
+            "temp_to_vector: failed to read temporary file {}: {}",
+            file_name,
+            _e
+        );
+        ERR_READ_TEMP_FILE_FAILED
+    })
+}
+
+/// ## Safety
+/// tbd
+pub unsafe fn cbuffer_to_hashmap_json(
+    buffer: *const c_char,
+) -> Result<HashMap<String, Value>, i32> {
     if buffer.is_null() {
         debug_print!("cbuffer_to_hashmap_json: buffer is NULL");
         return Err(ERR_NULL_PTR);
@@ -155,56 +176,50 @@ pub unsafe fn cbuffer_to_hashmap_json(buffer: *const c_char) -> Result<HashMap<S
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
     debug_print!("cbuffer_to_hashmap_json: raw length field is {}", length);
 
-
     if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!("cbuffer_to_hashmap_json: length {} is larger than MAXIMUM_BUFFER_SIZE ({})", length, MAXIMUM_BUFFER_SIZE);
+        debug_print!(
+            "cbuffer_to_hashmap_json: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
+            length,
+            MAXIMUM_BUFFER_SIZE
+        );
         return Err(ERR_BUFFER_TOO_LARGE);
     }
 
     debug_print!("cbuffer_to_hashmap_json: raw length field is {}", length);
 
-    let json_str;
-    let temp_string_result;
-    if length >= 0 {
-        match str::from_utf8(from_raw_parts(payload, length as usize)) {
-            Ok(input_str) => json_str = input_str,
-            Err(..) => {
-                debug_print!("cbuffer_to_hashmap_json: payload is invalid utf-8 string (length = {})", length);
-                return Err(ERR_INVALID_UTF8);
-            }
-        }
+    let json_bytes = if length >= 0 {
+        Cow::Borrowed(from_raw_parts(payload, length as usize))
     } else {
-        debug_print!("cbuffer_to_hashmap_json: calling temp_to_string");
-        match temp_to_string(payload, length) {
-            Ok(string) => {
-                temp_string_result = string;
-                json_str = &temp_string_result;
-            },
-            Err(e) => return Err(e)
-        }
-    }
+        debug_print!("cbuffer_to_hashmap_json: calling temp_to_vector");
+        Cow::Owned(temp_to_vector(payload, length)?)
+    };
 
-    return match serde_json::from_str(&json_str) {
-        Ok(json) => Ok(json),
-        Err(_e) => {
-            debug_print!("cbuffer_to_hashmap_json: serde_json::from_str / JSON decode failed {}", _e);
-            Err(ERR_JSON_DECODE_FAILED)
-        }
+    serde_json::from_slice(&json_bytes).map_err(|_e| {
+        debug_print!(
+            "cbuffer_to_hashmap_json: serde_json::from_slice / JSON decode failed {}",
+            _e
+        );
+        ERR_JSON_DECODE_FAILED
+    })
+}
+
+/// ## Safety
+/// tbd
+pub unsafe fn hashmap_json_to_cbuffer(json: &HashMap<String, Value>, buffer: *mut c_char) -> i32 {
+    match serde_json::to_vec(&json) {
+        Ok(json_bytes) => bytes_to_cbuffer(&json_bytes, buffer),
+        Err(_) => ERR_JSON_ENCODE_FAILED,
     }
 }
 
-pub unsafe fn hashmap_json_to_cbuffer(json: &HashMap<String,Value>, buffer: *mut c_char) -> i32 {
-    //TODO: Use tovec?
-    return match serde_json::to_string(&json) {
-        Ok(json_str) => string_to_cbuffer(&json_str, buffer),
-        Err(..) => ERR_JSON_ENCODE_FAILED
-    }
-}
-
+/// ## Safety
+/// tbd
 pub unsafe fn string_to_cbuffer(string: &str, buffer: *mut c_char) -> i32 {
     bytes_to_cbuffer(string.as_bytes(), buffer)
 }
 
+/// ## Safety
+/// tbd
 pub unsafe fn bytes_to_cbuffer(bytes: &[u8], buffer: *mut c_char) -> i32 {
     if buffer.is_null() {
         debug_print!("bytes_to_cbuffer: buffer is NULL");
@@ -239,12 +254,16 @@ pub unsafe fn bytes_to_cbuffer(bytes: &[u8], buffer: *mut c_char) -> i32 {
 }
 
 unsafe fn bytes_to_temp(bytes: &[u8], buffer: *mut c_char) -> i32 {
-    let tmp_file_path;
-    match write_new_file(bytes) {
-        Ok(t) => tmp_file_path = t,
-        Err(r) => return r
-    }
-    debug_print!("bytes_to_temp: write_new_file wrote {} bytes to {}", bytes.len(), tmp_file_path);
+    // TODO: eventually replace this pattern with if-let once that is stable -jsenkpiel
+    let tmp_file_path = match write_new_file(bytes) {
+        Ok(t) => t,
+        Err(r) => return r,
+    };
+    debug_print!(
+        "bytes_to_temp: write_new_file wrote {} bytes to {}",
+        bytes.len(),
+        tmp_file_path
+    );
 
     let length = buffer as *mut i32;
     let tmp_file_path_len = tmp_file_path.len() as i32;
@@ -252,51 +271,40 @@ unsafe fn bytes_to_temp(bytes: &[u8], buffer: *mut c_char) -> i32 {
     //NOTE: We explicitly test this so we don't recursively attempt to create temp files with string_to_cbuffer()
     if *length < tmp_file_path_len {
         //Temp file path won't fit in output buffer, we're out of luck
-        debug_print!("bytes_to_temp: temp file path {} is larger than buffer capacity {}", tmp_file_path, *length);
+        debug_print!(
+            "bytes_to_temp: temp file path {} is larger than buffer capacity {}",
+            tmp_file_path,
+            *length
+        );
         let _ = fs::remove_file(tmp_file_path);
         return ERR_BUFFER_TOO_SMALL;
     }
 
     let result = string_to_cbuffer(&tmp_file_path, buffer);
     if result != ERR_NONE {
-        debug_print!("bytes_to_temp: failed to store temp path {} in buffer", tmp_file_path);
+        debug_print!(
+            "bytes_to_temp: failed to store temp path {} in buffer",
+            tmp_file_path
+        );
         let _ = fs::remove_file(tmp_file_path);
         return result;
     }
 
     *length = 0 - tmp_file_path_len;
-    return result;
+
+    result
 }
 
 unsafe fn write_new_file(bytes: &[u8]) -> Result<String, i32> {
-    let mut tmpfile;
-    match NamedTempFile::new() {
-        Ok(f) => tmpfile = f,
-        Err(..) => return Err(ERR_WRITE_TEMP_FILE_FAILED)
-    }
-    let bytes_len = bytes.len();
+    let mut tmpfile = NamedTempFile::new().map_err(|_| ERR_WRITE_TEMP_FILE_FAILED)?;
 
-    let bytes_written;
-    match tmpfile.write_all(&bytes) {
-        Ok(..) => bytes_written = bytes_len as i32,
-        Err(..) => return Err(ERR_WRITE_TEMP_FILE_FAILED)
-    }
-
-    if (bytes_written as usize) != bytes_len {
+    if tmpfile.write_all(bytes).is_err() {
         return Err(ERR_WRITE_TEMP_FILE_FAILED);
-    }
+    };
 
-    let result;
-    match tmpfile.keep() {
-        Ok(r) => result = r,
-        Err(..) => return Err(ERR_WRITE_TEMP_FILE_FAILED)
-    }
-    let (_, path) = result;
+    let (_, path) = tmpfile.keep().map_err(|_| ERR_WRITE_TEMP_FILE_FAILED)?;
 
-    return match path.into_os_string().into_string() {
-        Ok(tmp_path) => Ok(tmp_path),
-        Err(..) => {
-            Err(ERR_WRITE_TEMP_FILE_FAILED)
-        }
-    }
+    path.into_os_string()
+        .into_string()
+        .map_err(|_| ERR_WRITE_TEMP_FILE_FAILED)
 }

@@ -1,20 +1,21 @@
-use std::os::raw::c_char;
-use std::{thread, time};
-use serde_json::{Value};
+#![allow(clippy::missing_safety_doc)]
+
 use std::collections::HashMap;
+use std::os::raw::c_char;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::{thread, time};
+
 use rand::Rng;
 use rand::RngCore;
-use std::sync::atomic::{AtomicI32, Ordering};
+use serde_json::Value;
 
 static COUNTER: AtomicI32 = AtomicI32::new(0);
 
 #[no_mangle]
 pub unsafe extern "C" fn spawnThread() {
-    std::thread::spawn(move || {
-        loop {
-            COUNTER.fetch_add(1, Ordering::Relaxed);
-            thread::sleep(time::Duration::from_secs(1))
-        }
+    std::thread::spawn(move || loop {
+        COUNTER.fetch_add(1, Ordering::Relaxed);
+        thread::sleep(time::Duration::from_secs(1))
     });
 }
 
@@ -45,11 +46,10 @@ pub unsafe extern "C" fn addDouble(x: f64, y: f64) -> f64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn toUpper(input: *const c_char, output: *mut c_char) -> i32 {
-    let input_str;
-    match cobhan::cbuffer_to_string(input) {
-        Ok(str) => input_str = str,
-        Err(e) => return e
-    }
+    let input_str = match cobhan::cbuffer_to_string(input) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
 
     let output_str = input_str.to_uppercase();
 
@@ -57,18 +57,21 @@ pub unsafe extern "C" fn toUpper(input: *const c_char, output: *mut c_char) -> i
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn filterJson(input: *const c_char, disallowed_value: *const c_char, output: *mut c_char) -> i32 {
+pub unsafe extern "C" fn filterJson(
+    input: *const c_char,
+    disallowed_value: *const c_char,
+    output: *mut c_char,
+) -> i32 {
     let mut json;
     match cobhan::cbuffer_to_hashmap_json(input) {
         Ok(input_json) => json = input_json,
-        Err(e) => return e
+        Err(e) => return e,
     }
 
-    let disallowed_value_str;
-    match cobhan::cbuffer_to_string(disallowed_value) {
-        Ok(disallow) => disallowed_value_str = disallow,
-        Err(e) => return e
-    }
+    let disallowed_value_str = match cobhan::cbuffer_to_string(disallowed_value) {
+        Ok(disallow) => disallow,
+        Err(e) => return e,
+    };
 
     filter_json(&mut json, &disallowed_value_str);
 
@@ -77,21 +80,15 @@ pub unsafe extern "C" fn filterJson(input: *const c_char, disallowed_value: *con
 
 // Example of a safe function
 pub fn filter_json(json: &mut HashMap<String, Value>, disallowed: &str) {
-    json.retain(|_key, value| {
-        return match value.as_str() {
-            None => true,
-            v => !v.unwrap().contains(&disallowed)
-        }
-    });
+    json.retain(|_key, value| matches!(value, Value::String(s) if !s.contains(&disallowed)));
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn base64Encode(input: *const c_char, output: *mut c_char) -> i32 {
-    let bytes;
-    match cobhan::cbuffer_to_vector(input) {
-        Ok(b) => bytes = b,
-        Err(e) => return e
-    }
+    let bytes = match cobhan::cbuffer_to_vector(input) {
+        Ok(b) => b,
+        Err(e) => return e,
+    };
 
     let b64str = base64::encode(bytes);
 
