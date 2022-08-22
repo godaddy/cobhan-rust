@@ -11,32 +11,43 @@ use serde_json::Value;
 use tempfile::NamedTempFile;
 
 const ERR_NONE: i32 = 0;
+pub const ERR_NONE: i32 = 0;
 
 //One of the provided pointers is NULL / nil / 0
 const ERR_NULL_PTR: i32 = -1;
+pub const ERR_NULL_PTR: i32 = -1;
 
 //One of the provided buffer lengths is too large
 const ERR_BUFFER_TOO_LARGE: i32 = -2;
+pub const ERR_BUFFER_TOO_LARGE: i32 = -2;
 
 //One of the provided buffers was too small
 const ERR_BUFFER_TOO_SMALL: i32 = -3;
+pub const ERR_BUFFER_TOO_SMALL: i32 = -3;
 
 //Failed to copy a buffer (copy length != expected length)
 //const ERR_COPY_FAILED: i32 = -4;
+pub const ERR_COPY_FAILED: i32 = -4;
 
 //Failed to decode a JSON buffer
 const ERR_JSON_DECODE_FAILED: i32 = -5;
+pub const ERR_JSON_DECODE_FAILED: i32 = -5;
 
 //Failed to encode to JSON buffer
 const ERR_JSON_ENCODE_FAILED: i32 = -6;
+pub const ERR_JSON_ENCODE_FAILED: i32 = -6;
 
 const ERR_INVALID_UTF8: i32 = -7;
+pub const ERR_INVALID_UTF8: i32 = -7;
 
 const ERR_READ_TEMP_FILE_FAILED: i32 = -8;
+pub const ERR_READ_TEMP_FILE_FAILED: i32 = -8;
 
 const ERR_WRITE_TEMP_FILE_FAILED: i32 = -9;
+pub const ERR_WRITE_TEMP_FILE_FAILED: i32 = -9;
 
 const BUFFER_HEADER_SIZE: isize = 64 / 8; // 64 bit buffer header provides 8 byte alignment for data pointers
+pub const BUFFER_HEADER_SIZE: isize = 64 / 8;
 
 const SIZEOF_INT32: isize = 32 / 8;
 
