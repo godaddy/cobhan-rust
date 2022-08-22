@@ -51,8 +51,6 @@ pub const BUFFER_HEADER_SIZE: isize = 64 / 8;
 
 const SIZEOF_INT32: isize = 32 / 8;
 
-static MAXIMUM_BUFFER_SIZE: i32 = i32::MAX;
-
 #[cfg(feature = "cobhan_debug")]
 macro_rules! debug_print {
     ($( $args:expr ),*) => { println!($($args ),*); };
@@ -75,14 +73,6 @@ pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
     debug_print!("cbuffer_to_vector: raw length field is {}", length);
 
-    if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!(
-            "cbuffer_to_vector: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
-            length,
-            MAXIMUM_BUFFER_SIZE
-        );
-        return Err(ERR_BUFFER_TOO_LARGE);
-    }
     if length < 0 {
         debug_print!("cbuffer_to_vector: calling temp_to_vector");
         return temp_to_vector(payload, length);
@@ -103,15 +93,6 @@ pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
     let _reserved = buffer.offset(SIZEOF_INT32) as *const i32;
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
     debug_print!("cbuffer_to_string: raw length field is {}", length);
-
-    if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!(
-            "cbuffer_to_string: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
-            length,
-            MAXIMUM_BUFFER_SIZE
-        );
-        return Err(ERR_BUFFER_TOO_LARGE);
-    }
 
     debug_print!("cbuffer_to_string: raw length field is {}", length);
 
@@ -185,17 +166,6 @@ pub unsafe fn cbuffer_to_hashmap_json(
     let length = *(buffer as *const i32);
     let _reserved = buffer.offset(SIZEOF_INT32) as *const i32;
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
-    debug_print!("cbuffer_to_hashmap_json: raw length field is {}", length);
-
-    if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!(
-            "cbuffer_to_hashmap_json: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
-            length,
-            MAXIMUM_BUFFER_SIZE
-        );
-        return Err(ERR_BUFFER_TOO_LARGE);
-    }
-
     debug_print!("cbuffer_to_hashmap_json: raw length field is {}", length);
 
     let json_bytes = if length >= 0 {
