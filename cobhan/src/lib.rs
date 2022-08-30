@@ -1,3 +1,30 @@
+//! # cobhan-rust - FFI Data Interface
+//!
+//! Cobhan FFI is a system for enabling shared code to be written in Rust and
+//! consumed from all major languages/platforms in a safe and effective way,
+//! using easy helper functions to manage any unsafe data marshaling.
+//!
+//! ## Types
+//!
+//! * Supported types
+//!     * i32 - 32bit signed integer
+//!     * i64 - 64bit signed integer
+//!     * fl64 - double precision 64bit IEEE 754 floating point
+//!     * Cobhan buffer - length delimited 8bit buffer (no null delimiters)
+//!         * utf-8 encoded string
+//!         * JSON
+//!         * binary data
+//! * Cobhan buffer details
+//!     * Callers provide the output buffer allocation and capacity
+//!     * Called functions can transparently return larger values via temporary files
+//!     * **Modern [tmpfs](https://en.wikipedia.org/wiki/Tmpfs) is entirely memory backed**
+//! * Return values
+//!     * Functions that return scalar values can return the value directly
+//!         * Functions *can* use special case and return maximum positive or maximum negative or zero values to
+//!             represent error or overflow conditions
+//!         * Functions *can* allow scalar values to wrap
+//!         * Functions should document their overflow / underflow behavior
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
@@ -10,37 +37,40 @@ use std::str;
 use serde_json::Value;
 use tempfile::NamedTempFile;
 
-const ERR_NONE: i32 = 0;
+/// No Error
+pub const ERR_NONE: i32 = 0;
 
-//One of the provided pointers is NULL / nil / 0
-const ERR_NULL_PTR: i32 = -1;
+/// One of the provided pointers is NULL / nil / 0
+pub const ERR_NULL_PTR: i32 = -1;
 
-//One of the provided buffer lengths is too large
-const ERR_BUFFER_TOO_LARGE: i32 = -2;
+/// One of the provided buffer lengths is too large
+pub const ERR_BUFFER_TOO_LARGE: i32 = -2;
 
-//One of the provided buffers was too small
-const ERR_BUFFER_TOO_SMALL: i32 = -3;
+/// One of the provided buffers was too small
+pub const ERR_BUFFER_TOO_SMALL: i32 = -3;
 
-//Failed to copy a buffer (copy length != expected length)
-//const ERR_COPY_FAILED: i32 = -4;
+/// Failed to copy a buffer (copy length != expected length)
+pub const ERR_COPY_FAILED: i32 = -4;
 
-//Failed to decode a JSON buffer
-const ERR_JSON_DECODE_FAILED: i32 = -5;
+/// Failed to decode a JSON buffer
+pub const ERR_JSON_DECODE_FAILED: i32 = -5;
 
-//Failed to encode to JSON buffer
-const ERR_JSON_ENCODE_FAILED: i32 = -6;
+/// Failed to encode to JSON buffer
+pub const ERR_JSON_ENCODE_FAILED: i32 = -6;
 
-const ERR_INVALID_UTF8: i32 = -7;
+/// UTF8 in a String or JSON is invalid.
+pub const ERR_INVALID_UTF8: i32 = -7;
 
-const ERR_READ_TEMP_FILE_FAILED: i32 = -8;
+/// TempFile for large partial data failed to read.
+pub const ERR_READ_TEMP_FILE_FAILED: i32 = -8;
 
-const ERR_WRITE_TEMP_FILE_FAILED: i32 = -9;
+/// TempFile for large partial data failed to write.
+pub const ERR_WRITE_TEMP_FILE_FAILED: i32 = -9;
 
-const BUFFER_HEADER_SIZE: isize = 64 / 8; // 64 bit buffer header provides 8 byte alignment for data pointers
+/// 64 bit buffer header provides 8 byte alignment for data pointers
+pub const BUFFER_HEADER_SIZE: isize = 64 / 8;
 
 const SIZEOF_INT32: isize = 32 / 8;
-
-static MAXIMUM_BUFFER_SIZE: i32 = i32::MAX;
 
 #[cfg(feature = "cobhan_debug")]
 macro_rules! debug_print {
@@ -52,8 +82,17 @@ macro_rules! debug_print {
     ($( $args:expr ),*) => {};
 }
 
+/// Takes a pointer to an external Cobhan Buffer and fallibly attempts to interpret it as a `Vec<u8>`.
+///
+/// ## Notes
+///
+/// This function does a memcopy from the provided Cobhan Buffer into Rust owned data.
+///
 /// ## Safety
-/// tbd
+///
+/// Behavior is undefined if any of the following conditions are violated:
+/// - The Cobhan Buffer Header size is not correctly reserved or formatted.
+/// - Any of the Safety conditions of [`std::slice::from_raw_parts`][] is violated.
 pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     if buffer.is_null() {
         debug_print!("cbuffer_to_vector: buffer is NULL");
@@ -64,14 +103,6 @@ pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
     debug_print!("cbuffer_to_vector: raw length field is {}", length);
 
-    if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!(
-            "cbuffer_to_vector: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
-            length,
-            MAXIMUM_BUFFER_SIZE
-        );
-        return Err(ERR_BUFFER_TOO_LARGE);
-    }
     if length < 0 {
         debug_print!("cbuffer_to_vector: calling temp_to_vector");
         return temp_to_vector(payload, length);
@@ -81,8 +112,19 @@ pub unsafe fn cbuffer_to_vector(buffer: *const c_char) -> Result<Vec<u8>, i32> {
     Ok(from_raw_parts(payload, length as usize).to_vec())
 }
 
+/// Takes a pointer to an external Cobhan Buffer and fallibly attempts to interpret it as a `String`.
+///
+/// The String is fallibly checked to ensure UTF-8 formatting.
+///
+/// ## Notes
+///
+/// This function does a memcopy from the provided Cobhan Buffer into Rust owned data.
+///
 /// ## Safety
-/// tbd
+///
+/// Behavior is undefined if any of the following conditions are violated:
+/// - The Cobhan Buffer Header size is not correctly reserved or formatted.
+/// - Any of the Safety conditions of [`std::slice::from_raw_parts`][] is violated.
 pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
     if buffer.is_null() {
         debug_print!("cbuffer_to_string: buffer is NULL");
@@ -92,15 +134,6 @@ pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
     let _reserved = buffer.offset(SIZEOF_INT32) as *const i32;
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
     debug_print!("cbuffer_to_string: raw length field is {}", length);
-
-    if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!(
-            "cbuffer_to_string: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
-            length,
-            MAXIMUM_BUFFER_SIZE
-        );
-        return Err(ERR_BUFFER_TOO_LARGE);
-    }
 
     debug_print!("cbuffer_to_string: raw length field is {}", length);
 
@@ -120,6 +153,7 @@ pub unsafe fn cbuffer_to_string(buffer: *const c_char) -> Result<String, i32> {
         })
 }
 
+/// Gets a tempfile data for a payload and interprets it as a `String`.
 unsafe fn temp_to_string(payload: *const u8, length: i32) -> Result<String, i32> {
     let file_name =
         str::from_utf8(from_raw_parts(payload, (0 - length) as usize)).map_err(|_| {
@@ -142,6 +176,7 @@ unsafe fn temp_to_string(payload: *const u8, length: i32) -> Result<String, i32>
     })
 }
 
+/// Gets a tempfile data for a payload and interprets it as a `Vec<u8>`.
 unsafe fn temp_to_vector(payload: *const u8, length: i32) -> Result<Vec<u8>, i32> {
     let file_name =
         str::from_utf8(from_raw_parts(payload, (0 - length) as usize)).map_err(|_| {
@@ -162,8 +197,19 @@ unsafe fn temp_to_vector(payload: *const u8, length: i32) -> Result<Vec<u8>, i32
     })
 }
 
+/// Takes a pointer to an external Cobhan Buffer and fallibly attempts to interpret it as a `Hashmap<String, serde_json::Value>`.
+///
+/// The JSON is fallibly checked to ensure UTF-8 formatting of any string properties.
+///
+/// ## Notes
+///
+/// This function does a memcopy from the provided Cobhan Buffer into Rust owned data.
+///
 /// ## Safety
-/// tbd
+///
+/// Behavior is undefined if any of the following conditions are violated:
+/// - The Cobhan Buffer Header size is not correctly reserved or formatted.
+/// - Any of the Safety conditions of [`std::slice::from_raw_parts`][] is violated.
 pub unsafe fn cbuffer_to_hashmap_json(
     buffer: *const c_char,
 ) -> Result<HashMap<String, Value>, i32> {
@@ -174,17 +220,6 @@ pub unsafe fn cbuffer_to_hashmap_json(
     let length = *(buffer as *const i32);
     let _reserved = buffer.offset(SIZEOF_INT32) as *const i32;
     let payload = buffer.offset(BUFFER_HEADER_SIZE) as *const u8;
-    debug_print!("cbuffer_to_hashmap_json: raw length field is {}", length);
-
-    if length > MAXIMUM_BUFFER_SIZE {
-        debug_print!(
-            "cbuffer_to_hashmap_json: length {} is larger than MAXIMUM_BUFFER_SIZE ({})",
-            length,
-            MAXIMUM_BUFFER_SIZE
-        );
-        return Err(ERR_BUFFER_TOO_LARGE);
-    }
-
     debug_print!("cbuffer_to_hashmap_json: raw length field is {}", length);
 
     let json_bytes = if length >= 0 {
@@ -203,8 +238,21 @@ pub unsafe fn cbuffer_to_hashmap_json(
     })
 }
 
+/// Takes a `Hashmap<String, serde_json::Value>` and fallibly encodes it in JSON into a provided external Cobhan Buffer.
+///
+/// The JSON is fallibly checked to ensure UTF-8 formatting of any string properties.
+///
+/// Will cause an error code if the provided Cobhan Buffer is too small.
+///
+/// ## Notes
+///
+/// This function does a memcopy from the Rust data into the provided Cobhan Buffer.
+///
 /// ## Safety
-/// tbd
+///
+/// Behavior is undefined if any of the following conditions are violated:
+/// - The Cobhan Buffer Header size is not correctly reserved or formatted.
+/// - Any of the Safety conditions of [`std::slice::from_raw_parts`][] is violated.
 pub unsafe fn hashmap_json_to_cbuffer(json: &HashMap<String, Value>, buffer: *mut c_char) -> i32 {
     match serde_json::to_vec(&json) {
         Ok(json_bytes) => bytes_to_cbuffer(&json_bytes, buffer),
@@ -212,14 +260,36 @@ pub unsafe fn hashmap_json_to_cbuffer(json: &HashMap<String, Value>, buffer: *mu
     }
 }
 
+/// Takes a `String` and fallibly encodes it into a provided external Cobhan Buffer.
+///
+/// Will cause an error code if the provided Cobhan Buffer is too small.
+///
+/// ## Notes
+///
+/// This function does a memcopy from the Rust data into the provided Cobhan Buffer.
+///
 /// ## Safety
-/// tbd
+///
+/// Behavior is undefined if any of the following conditions are violated:
+/// - The Cobhan Buffer Header size is not correctly reserved or formatted.
+/// - Any of the Safety conditions of [`std::slice::from_raw_parts`][] is violated.
 pub unsafe fn string_to_cbuffer(string: &str, buffer: *mut c_char) -> i32 {
     bytes_to_cbuffer(string.as_bytes(), buffer)
 }
 
+/// Takes a `Vec<u8>` and fallibly encodes it into a provided external Cobhan Buffer.
+///
+/// Will cause an error code if the provided Cobhan Buffer is too small.
+///
+/// ## Notes
+///
+/// This function does a memcopy from the Rust data into the provided Cobhan Buffer.
+///
 /// ## Safety
-/// tbd
+///
+/// Behavior is undefined if any of the following conditions are violated:
+/// - The Cobhan Buffer Header size is not correctly reserved or formatted.
+/// - Any of the Safety conditions of [`std::slice::from_raw_parts`][] is violated.
 pub unsafe fn bytes_to_cbuffer(bytes: &[u8], buffer: *mut c_char) -> i32 {
     if buffer.is_null() {
         debug_print!("bytes_to_cbuffer: buffer is NULL");
@@ -253,6 +323,7 @@ pub unsafe fn bytes_to_cbuffer(bytes: &[u8], buffer: *mut c_char) -> i32 {
     ERR_NONE
 }
 
+/// Sets a tempfile data for a payload and writes bytes to it.
 unsafe fn bytes_to_temp(bytes: &[u8], buffer: *mut c_char) -> i32 {
     // TODO: eventually replace this pattern with if-let once that is stable -jsenkpiel
     let tmp_file_path = match write_new_file(bytes) {
@@ -295,7 +366,8 @@ unsafe fn bytes_to_temp(bytes: &[u8], buffer: *mut c_char) -> i32 {
     result
 }
 
-unsafe fn write_new_file(bytes: &[u8]) -> Result<String, i32> {
+// Writes to a new named temporary file and returns the file name.
+fn write_new_file(bytes: &[u8]) -> Result<String, i32> {
     let mut tmpfile = NamedTempFile::new().map_err(|_| ERR_WRITE_TEMP_FILE_FAILED)?;
 
     if tmpfile.write_all(bytes).is_err() {
